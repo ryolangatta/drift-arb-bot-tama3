@@ -1,0 +1,21 @@
+services:
+  - type: worker
+    name: drift-arb-bot
+    runtime: python
+    repo: https://github.com/YOUR_GITHUB_USERNAME/drift-arb-bot
+    branch: main
+    buildCommand: pip install -r requirements.txt
+    startCommand: python core/main.py
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11
+      - key: DATABASE_URL
+        generateValue: true
+      - key: MODE
+        sync: false
+      - key: DISCORD_WEBHOOK_URL
+        sync: false
+    disk:
+      name: bot-data
+      mountPath: /data
+      sizeGB: 1

@@ -1,0 +1,33 @@
+{
+  "MODE": "SIMULATION",
+  "EXCHANGE_CONFIG": {
+    "DRIFT": {
+      "RPC_ENDPOINT": "https://api.mainnet-beta.solana.com",
+      "WEBSOCKET_ENABLED": false
+    },
+    "BINANCE": {
+      "API_ENDPOINT": "https://api.binance.com",
+      "USE_TESTNET": false
+    }
+  },
+  "TRADING_CONFIG": {
+    "SPREAD_THRESHOLD": 0.007,
+    "MIN_PROFIT_AFTER_FEES": 0.003,
+    "TRADE_SIZE_USDC": 100,
+    "START_BALANCE": 1000,
+    "PAIRS_TO_MONITOR": ["SOL/USDC"]
+  },
+  "RISK_MANAGEMENT": {
+    "MAX_TRADES_PER_DAY": 50,
+    "MAX_DAILY_DRAWDOWN": 0.05,
+    "COOLDOWN_AFTER_LOSSES": 3
+  },
+  "MONITORING": {
+    "DISCORD_UPDATE_INTERVAL_MIN": 30,
+    "HEALTH_CHECK_INTERVAL_SEC": 60
+  },
+  "SYSTEM": {
+    "LOG_LEVEL": "INFO",
+    "TIMEZONE": "UTC"
+  }
+}
