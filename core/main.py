@@ -7,9 +7,16 @@ import sys
 import time
 import json
 import logging
+import asyncio
 from datetime import datetime
 from dotenv import load_dotenv
 from discord_webhook import DiscordWebhook, DiscordEmbed
+
+# Add parent directory to path
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from modules.price_feed import PriceFeed
+from modules.arb_detector import ArbitrageDetector
 
 # Load environment variables
 load_dotenv()
@@ -35,6 +42,13 @@ class DriftArbBot:
         with open('config/settings.json', 'r') as f:
             self.settings = json.load(f)
         
+        # Initialize modules
+        self.price_feed = PriceFeed(self.settings)
+        self.arb_detector = ArbitrageDetector(self.settings)
+        
+        # Get pairs to monitor
+        self.pairs_to_monitor = self.settings['TRADING_CONFIG']['PAIRS_TO_MONITOR']
+        
         logger.info(f"Bot initialized in {self.mode} mode ({self.env} environment)")
     
     def send_startup_message(self):
@@ -54,9 +68,10 @@ class DriftArbBot:
             
             embed.add_embed_field(
                 name="Configuration",
-                value=f"Spread Threshold: {self.settings['TRADING_CONFIG']['SPREAD_THRESHOLD']}\n" +
+                value=f"Spread Threshold: {self.settings['TRADING_CONFIG']['SPREAD_THRESHOLD']:.1%}\n" +
+                      f"Min Profit: {self.settings['TRADING_CONFIG']['MIN_PROFIT_AFTER_FEES']:.1%}\n" +
                       f"Trade Size: ${self.settings['TRADING_CONFIG']['TRADE_SIZE_USDC']}\n" +
-                      f"Pairs: {', '.join(self.settings['TRADING_CONFIG']['PAIRS_TO_MONITOR'])}",
+                      f"Pairs: {', '.join(self.pairs_to_monitor)}",
                 inline=False
             )
             
@@ -74,32 +89,68 @@ class DriftArbBot:
         except Exception as e:
             logger.error(f"Error sending Discord notification: {e}")
     
+    def send_opportunity_alert(self, opportunity: dict):
+        """Send arbitrage opportunity alert to Discord"""
+        if not self.webhook_url:
+            return
+        
+        try:
+            webhook = DiscordWebhook(url=self.webhook_url)
+            
+            embed = DiscordEmbed(
+                title="🎯 Arbitrage Opportunity Detected!",
+                description=f"**{opportunity['pair']}** - Profitable spread found",
+                color="00ff00"
+            )
+            
+            embed.add_embed_field(
+                name="Prices",
+                value=f"Binance Spot: ${opportunity['spot_price']:.4f}\n" +
+                      f"Drift Perp: ${opportunity['perp_price']:.4f}",
+                inline=True
+            )
+            
+            embed.add_embed_field(
+                name="Opportunity",
+                value=f"Spread: {opportunity['spread']:.2%}\n" +
+                      f"Profit/Trade: ${opportunity['potential_profit_usdc']:.2f}",
+                inline=True
+            )
+            
+            embed.set_timestamp()
+            webhook.add_embed(embed)
+            webhook.execute()
+            
+        except Exception as e:
+            logger.error(f"Error sending opportunity alert: {e}")
+    
+    async def price_callback(self, pair: str, spot_price: float, perp_price: float):
+        """Callback for when new prices are received"""
+        # Check for arbitrage opportunity
+        opportunity = self.arb_detector.check_arbitrage_opportunity(
+            pair, spot_price, perp_price
+        )
+        
+        if opportunity:
+            self.send_opportunity_alert(opportunity)
+    
+    async def run_async(self):
+        """Async main loop"""
+        logger.info("Starting price monitoring...")
+        
+        # Start price monitoring
+        await self.price_feed.start_price_monitoring(
+            self.pairs_to_monitor,
+            callback=self.price_callback
+        )
+    
     def run(self):
         """Main bot loop"""
         self.send_startup_message()
         
-        logger.info("Starting main bot loop...")
-        loop_count = 0
-        
         try:
-            while True:
-                loop_count += 1
-                
-                # Log heartbeat every 10 loops (10 minutes)
-                if loop_count % 10 == 0:
-                    logger.info(f"Bot heartbeat - Loop #{loop_count}")
-                    
-                    # Send periodic update to Discord
-                    if self.webhook_url and loop_count % 30 == 0:  # Every 30 minutes
-                        webhook = DiscordWebhook(
-                            url=self.webhook_url,
-                            content=f"💓 Bot is running - Uptime: {loop_count} minutes"
-                        )
-                        webhook.execute()
-                
-                # Sleep for 1 minute
-                time.sleep(60)
-                
+            # Run async event loop
+            asyncio.run(self.run_async())
         except KeyboardInterrupt:
             logger.info("Bot stopped by user")
             self.shutdown()
