@@ -2,13 +2,13 @@ services:
   - type: worker
     name: drift-arb-bot
     runtime: python
-    repo: https://github.com/YOUR_GITHUB_USERNAME/drift-arb-bot
+    repo: https://github.com/ryolangatta/drift-arb-bot
     branch: main
     buildCommand: pip install -r requirements.txt
     startCommand: python core/main.py
     envVars:
       - key: PYTHON_VERSION
-        value: 3.11
+        value: "3.11"
       - key: DATABASE_URL
         generateValue: true
       - key: MODE
