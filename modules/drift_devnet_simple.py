@@ -20,16 +20,28 @@ class DriftDevnetSimple:
         
         if private_key_str:
             try:
-                # Handle base58 private key
-                if len(private_key_str) > 50:  # base58 format
+                # Handle JSON array format (with or without spaces)
+                if private_key_str.startswith('['):
+                    # Remove brackets and spaces, then split by comma
+                    cleaned = private_key_str.strip('[]').replace(' ', '')
+                    key_array = [int(x) for x in cleaned.split(',')]
+                    
+                    # Solana keypairs are 64 bytes (32 secret + 32 public)
+                    if len(key_array) == 64:
+                        secret_key = bytes(key_array[:32])
+                    elif len(key_array) == 32:
+                        secret_key = bytes(key_array)
+                    else:
+                        raise ValueError(f"Expected 32 or 64 bytes, got {len(key_array)}")
+                
+                # Handle base58 format
+                elif len(private_key_str) > 50:
                     secret_bytes = base58.b58decode(private_key_str)
-                    # Take only first 32 bytes for secret key
                     secret_key = secret_bytes[:32]
+                
+                # Handle other formats
                 else:
-                    # Handle array format [1,2,3,...]
-                    import json
-                    key_array = json.loads(private_key_str)
-                    secret_key = bytes(key_array[:32])
+                    raise ValueError("Unknown private key format")
                 
                 self.keypair = Keypair.from_bytes(secret_key)
                 self.connected = True
