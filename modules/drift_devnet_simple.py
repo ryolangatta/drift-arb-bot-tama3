@@ -43,7 +43,8 @@ class DriftDevnetSimple:
                 else:
                     raise ValueError("Unknown private key format")
                 
-                self.keypair = Keypair.from_bytes(secret_key)
+                # Use from_seed for 32-byte secret key
+                self.keypair = Keypair.from_seed(secret_key)
                 self.connected = True
                 
                 logger.info(f"Connected to Drift Devnet! Wallet: {self.keypair.pubkey()}")
