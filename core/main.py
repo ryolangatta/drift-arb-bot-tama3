@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Drift-Binance Arbitrage Bot - With Test Network Trading
+Drift-Binance Arbitrage Bot - Complete Test Network Trading
 """
 import os
 import sys
@@ -17,6 +17,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from modules.price_feed import PriceFeed
 from modules.arb_detector import ArbitrageDetector
 from modules.binance_testnet_simple import BinanceTestnetSimple
+from modules.drift_devnet_simple import DriftDevnetSimple
 
 # Load environment variables
 load_dotenv()
@@ -47,11 +48,13 @@ class DriftArbBot:
         self.price_feed = PriceFeed(self.settings)
         self.arb_detector = ArbitrageDetector(self.settings)
         
-        # Initialize testnet if enabled
-        self.testnet = None
+        # Initialize testnet connections if enabled
+        self.binance_testnet = None
+        self.drift_devnet = None
         if self.enable_testnet:
-            logger.info("Initializing Binance Testnet connection...")
-            self.testnet = BinanceTestnetSimple()
+            logger.info("Initializing test network connections...")
+            self.binance_testnet = BinanceTestnetSimple()
+            self.drift_devnet = DriftDevnetSimple()
         
         # Get pairs to monitor
         self.pairs_to_monitor = self.settings['TRADING_CONFIG']['PAIRS_TO_MONITOR']
@@ -71,7 +74,7 @@ class DriftArbBot:
             webhook = DiscordWebhook(url=self.webhook_url)
             
             embed = DiscordEmbed(
-                title="🚀 Drift Arbitrage Bot Started",
+                title="🚀 Drift-Binance Arbitrage Bot Started",
                 description=f"Mode: **{self.mode}**\nTestnet: **{'ENABLED' if self.enable_testnet else 'DISABLED'}**",
                 color="03b2f8"
             )
@@ -79,10 +82,20 @@ class DriftArbBot:
             embed.add_embed_field(
                 name="Configuration",
                 value=f"Spread Threshold: {self.settings['TRADING_CONFIG']['SPREAD_THRESHOLD']:.1%}\n" +
-                      f"Trade Size: ${self.settings['TRADING_CONFIG']['TRADE_SIZE_USDC']}\n" +
-                      f"Testnet Connected: {'✅' if self.testnet and self.testnet.connected else '❌'}",
+                      f"Trade Size: ${self.settings['TRADING_CONFIG']['TRADE_SIZE_USDC']}",
                 inline=False
             )
+            
+            if self.enable_testnet:
+                binance_status = "✅ Connected" if self.binance_testnet and self.binance_testnet.connected else "❌ Not Connected"
+                drift_status = "✅ Connected" if self.drift_devnet and self.drift_devnet.connected else "❌ Not Connected"
+                
+                embed.add_embed_field(
+                    name="Test Networks",
+                    value=f"Binance Testnet: {binance_status}\n" +
+                          f"Drift Devnet: {drift_status}",
+                    inline=False
+                )
             
             embed.set_timestamp()
             webhook.add_embed(embed)
@@ -91,44 +104,48 @@ class DriftArbBot:
         except Exception as e:
             logger.error(f"Error sending Discord notification: {e}")
     
-    def send_opportunity_alert(self, opportunity: dict, order=None):
-        """Send arbitrage opportunity alert to Discord"""
+    def send_arbitrage_alert(self, opportunity: dict, binance_order=None, drift_order=None):
+        """Send arbitrage execution alert to Discord"""
         if not self.webhook_url:
             return
         
         try:
             webhook = DiscordWebhook(url=self.webhook_url)
             
-            if order:
-                # Real order executed
-                embed = DiscordEmbed(
-                    title="🧪 TESTNET ORDER EXECUTED!",
-                    description=f"Real order placed on Binance Testnet",
-                    color="9b59b6"
-                )
-                
-                embed.add_embed_field(
-                    name="Order Details",
-                    value=f"Order ID: `{order['orderId']}`\n" +
-                          f"Symbol: {order['symbol']}\n" +
-                          f"Status: {order['status']}\n" +
-                          f"Executed Qty: {order['executedQty']}",
-                    inline=False
-                )
-            else:
-                # Just opportunity detected
-                embed = DiscordEmbed(
-                    title="🎯 Arbitrage Opportunity Detected!",
-                    description=f"**{opportunity['pair']}** - Profitable spread found",
-                    color="00ff00"
-                )
+            embed = DiscordEmbed(
+                title="🎯 ARBITRAGE EXECUTED - TEST NETWORKS",
+                description=f"Complete arbitrage trade placed on both exchanges",
+                color="9b59b6"
+            )
             
+            # Opportunity details
             embed.add_embed_field(
                 name="Opportunity",
-                value=f"Spread: {opportunity['spread']:.2%}\n" +
+                value=f"Pair: {opportunity['pair']}\n" +
+                      f"Spread: {opportunity['spread']:.2%}\n" +
                       f"Expected Profit: ${opportunity['potential_profit_usdc']:.2f}",
-                inline=True
+                inline=False
             )
+            
+            # Binance order
+            if binance_order:
+                embed.add_embed_field(
+                    name="✅ Binance Testnet",
+                    value=f"Order ID: `{binance_order['orderId']}`\n" +
+                          f"Status: {binance_order['status']}\n" +
+                          f"Executed: {binance_order['executedQty']} SOL",
+                    inline=True
+                )
+            
+            # Drift order
+            if drift_order:
+                embed.add_embed_field(
+                    name="✅ Drift Devnet",
+                    value=f"Order ID: `{drift_order['orderId']}`\n" +
+                          f"Side: {drift_order['side']}\n" +
+                          f"Size: {drift_order['size']} SOL",
+                    inline=True
+                )
             
             embed.set_timestamp()
             webhook.add_embed(embed)
@@ -145,32 +162,66 @@ class DriftArbBot:
         )
         
         if opportunity:
-            self.send_opportunity_alert(opportunity)
-            
-            # Execute test order if enabled
-            if self.enable_testnet and self.testnet and self.testnet.connected:
-                # Calculate quantity
-                trade_size_usd = self.settings['TRADING_CONFIG']['TRADE_SIZE_USDC']
-                quantity = trade_size_usd / spot_price
-                
-                # Convert symbol (SOL/USDC -> SOLUSDT for testnet)
-                symbol = pair.replace("/USDC", "USDT").replace("/", "")
-                
-                # Place real testnet order
-                order = self.testnet.place_test_order(symbol, "BUY", quantity)
-                
-                if order:
-                    # Store position
-                    position_id = f"{pair}_{order['orderId']}"
-                    self.open_positions[position_id] = {
-                        'order': order,
-                        'entry_price': spot_price,
-                        'quantity': float(order['executedQty']),
-                        'timestamp': datetime.now()
-                    }
+            # Execute test orders if enabled
+            if self.enable_testnet and self.binance_testnet and self.drift_devnet:
+                # Only execute if both are connected
+                if self.binance_testnet.connected and self.drift_devnet.connected:
+                    # Calculate quantity
+                    trade_size_usd = self.settings['TRADING_CONFIG']['TRADE_SIZE_USDC']
+                    quantity = trade_size_usd / spot_price
                     
-                    # Send alert with order details
-                    self.send_opportunity_alert(opportunity, order)
+                    # 1. Buy spot on Binance
+                    symbol = pair.replace("/USDC", "USDT").replace("/", "")
+                    binance_order = self.binance_testnet.place_test_order(symbol, "BUY", quantity)
+                    
+                    # 2. Short perp on Drift
+                    drift_market = pair.split("/")[0] + "-PERP"
+                    drift_order = None
+                    if binance_order:
+                        drift_order = self.drift_devnet.place_perp_order(
+                            drift_market, 
+                            float(binance_order['executedQty']), 
+                            perp_price
+                        )
+                    
+                    # Send alert if both orders successful
+                    if binance_order and drift_order:
+                        self.send_arbitrage_alert(opportunity, binance_order, drift_order)
+                        
+                        # Store position
+                        position_id = f"{pair}_{binance_order['orderId']}_{drift_order['orderId']}"
+                        self.open_positions[position_id] = {
+                            'binance_order': binance_order,
+                            'drift_order': drift_order,
+                            'entry_spread': opportunity['spread'],
+                            'timestamp': datetime.now()
+                        }
+                else:
+                    logger.warning("Test networks not fully connected")
+            else:
+                # Just send opportunity alert
+                self.send_opportunity_alert(opportunity)
+    
+    def send_opportunity_alert(self, opportunity: dict):
+        """Send simple opportunity alert"""
+        if not self.webhook_url:
+            return
+        
+        try:
+            webhook = DiscordWebhook(url=self.webhook_url)
+            
+            embed = DiscordEmbed(
+                title="🎯 Arbitrage Opportunity",
+                description=f"{opportunity['pair']} - Spread: {opportunity['spread']:.2%}",
+                color="00ff00"
+            )
+            
+            embed.set_timestamp()
+            webhook.add_embed(embed)
+            webhook.execute()
+            
+        except Exception as e:
+            logger.error(f"Error sending alert: {e}")
     
     async def run_async(self):
         """Async main loop"""
@@ -201,10 +252,7 @@ class DriftArbBot:
         
         if self.webhook_url:
             positions = len(self.open_positions)
-            message = f"🛑 Bot shutting down\nOpen positions: {positions}"
-            
-            if self.enable_testnet:
-                message += "\nTestnet orders were REAL (test money)"
+            message = f"🛑 Bot shutting down\nOpen arbitrage positions: {positions}"
             
             webhook = DiscordWebhook(url=self.webhook_url, content=message)
             webhook.execute()
