@@ -19,7 +19,7 @@ from modules.price_feed import PriceFeed
 from modules.arb_detector import ArbitrageDetector
 from modules.binance_testnet_simple import BinanceTestnetSimple
 from modules.drift_devnet_simple import DriftDevnetSimple
-# from modules.drift_integration import DriftIntegration
+from modules.drift_integration import DriftIntegration
 from modules.trade_tracker import TradeTracker
 
 # Load environment variables
