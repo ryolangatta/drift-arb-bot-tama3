@@ -7,7 +7,8 @@ import sys
 import json
 import logging
 import asyncio
-from datetime import datetime
+import base64
+from datetime import datetime, timedelta
 from dotenv import load_dotenv
 from discord_webhook import DiscordWebhook, DiscordEmbed
 
@@ -19,6 +20,7 @@ from modules.arb_detector import ArbitrageDetector
 from modules.binance_testnet_simple import BinanceTestnetSimple
 from modules.drift_devnet_simple import DriftDevnetSimple
 from modules.drift_integration import DriftIntegration
+from modules.trade_tracker import TradeTracker
 
 # Load environment variables
 load_dotenv()
@@ -71,8 +73,10 @@ class DriftArbBot:
         # Get pairs to monitor
         self.pairs_to_monitor = self.settings['TRADING_CONFIG']['PAIRS_TO_MONITOR']
         
-        # Track positions
+        # Track positions and trades
         self.open_positions = {}
+        self.trade_tracker = TradeTracker(initial_balance=500.0)
+        self.last_report_time = datetime.now()
         
         logger.info(f"Bot initialized - Mode: {self.mode} | Testnet: {'ENABLED' if self.enable_testnet else 'DISABLED'}")
     
@@ -172,6 +176,11 @@ class DriftArbBot:
     
     async def price_callback(self, pair: str, spot_price: float, perp_price: float):
         """Callback for when new prices are received"""
+        # Check if it's time for periodic report (every 10 minutes)
+        if datetime.now() - self.last_report_time > timedelta(minutes=10):
+            self.send_periodic_report()
+            self.last_report_time = datetime.now()
+        
         # Check for arbitrage opportunity
         opportunity = self.arb_detector.check_arbitrage_opportunity(
             pair, spot_price, perp_price
@@ -220,6 +229,9 @@ class DriftArbBot:
                     if binance_order and drift_order:
                         self.send_arbitrage_alert(opportunity, binance_order, drift_order)
                         
+                        # Record the trade
+                        self.trade_tracker.record_trade(opportunity, binance_order, drift_order)
+                        
                         # Store position
                         position_id = f"{pair}_{binance_order['orderId']}_{drift_order['orderId']}"
                         self.open_positions[position_id] = {
@@ -254,6 +266,68 @@ class DriftArbBot:
             
         except Exception as e:
             logger.error(f"Error sending alert: {e}")
+    
+    def send_periodic_report(self):
+        """Send periodic trading report with ROI chart"""
+        if not self.webhook_url:
+            return
+        
+        try:
+            summary = self.trade_tracker.get_summary()
+            
+            webhook = DiscordWebhook(url=self.webhook_url)
+            
+            embed = DiscordEmbed(
+                title="📊 Trading Report - 10 Minute Update",
+                description=f"Runtime: {summary['runtime']}",
+                color="1f8b4c"
+            )
+            
+            # Performance metrics
+            embed.add_embed_field(
+                name="📈 Performance",
+                value=f"Total Trades: {summary['total_trades']}\n" +
+                      f"Total Profit: ${summary['total_profit']:.2f}\n" +
+                      f"ROI: {summary['roi']:.2f}%\n" +
+                      f"Avg Spread: {summary['avg_spread']:.4%}",
+                inline=True
+            )
+            
+            # Balance information
+            embed.add_embed_field(
+                name="💰 Balances",
+                value=f"Total: ${summary['current_balance']:.2f}\n" +
+                      f"Binance: ${summary['binance_balance']:.2f}\n" +
+                      f"Drift: ${summary['drift_balance']:.2f}\n" +
+                      f"Initial: $1000.00",
+                inline=True
+            )
+            
+            # Recent trades
+            recent_trades = self.trade_tracker.get_recent_trades(10)
+            if recent_trades:
+                trades_text = ""
+                for trade in recent_trades[-5:]:  # Last 5 trades
+                    trades_text += f"• {trade['pair']} +${trade['expected_profit']:.2f}\n"
+                
+                embed.add_embed_field(
+                    name="🔄 Recent Trades",
+                    value=trades_text or "No trades yet",
+                    inline=False
+                )
+            
+            embed.set_timestamp()
+            webhook.add_embed(embed)
+            
+            # Add ROI chart if available
+            roi_chart = self.trade_tracker.generate_roi_chart()
+            if roi_chart:
+                webhook.add_file(file=base64.b64decode(roi_chart), filename="roi_chart.png")
+            
+            webhook.execute()
+            
+        except Exception as e:
+            logger.error(f"Error sending periodic report: {e}")
     
     async def run_async(self):
         """Async main loop"""

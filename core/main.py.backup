@@ -1,0 +1,130 @@
+#!/usr/bin/env python3
+"""
+Drift-Binance Arbitrage Bot - Test Network Trading
+All configuration from Render environment variables
+"""
+import os
+import sys
+import time
+import json
+import logging
+import asyncio
+from datetime import datetime
+from discord_webhook import DiscordWebhook, DiscordEmbed
+
+# Fix import path
+project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, project_root)
+
+from modules.price_feed import PriceFeed
+from modules.arb_detector import ArbitrageDetector
+from modules.trade_simulator import TradeSimulator
+from modules.roi_tracker import ROITracker
+from modules.plotter import Plotter
+from modules.binance_testnet import BinanceTestnet
+from modules.drift_devnet import DriftDevnet
+from modules.test_trader import TestTrader
+
+# Setup logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(sys.stdout),
+        logging.FileHandler('data/logs/bot.log', mode='a')
+    ]
+)
+logger = logging.getLogger(__name__)
+
+# Log environment status
+logger.info(f"Running on Render: {'RENDER' in os.environ}")
+logger.info(f"Environment: {os.getenv('ENV', 'development')}")
+
+class DriftArbBot:
+    def __init__(self):
+        # All configuration from Render environment variables
+        self.webhook_url = os.getenv('DISCORD_WEBHOOK_URL')
+        self.mode = os.getenv('MODE', 'SIMULATION')
+        self.env = os.getenv('ENV', 'development')
+        
+        # Validate required variables
+        if not self.webhook_url and self.env == 'production':
+            logger.warning("DISCORD_WEBHOOK_URL not set in Render environment variables")
+        
+        # Load settings
+        with open('config/settings.json', 'r') as f:
+            self.settings = json.load(f)
+        
+        # Override settings with Render environment variables
+        self._apply_env_overrides()
+        
+        # Initialize modules
+        self.price_feed = PriceFeed(self.settings)
+        self.arb_detector = ArbitrageDetector(self.settings)
+        self.trade_simulator = TradeSimulator(self.settings)
+        self.roi_tracker = ROITracker(self.settings)
+        self.plotter = Plotter()
+        
+        # Initialize test network modules
+        self.binance_testnet = BinanceTestnet(self.settings)
+        self.drift_devnet = DriftDevnet(self.settings)
+        self.test_trader = TestTrader(self.settings, self.binance_testnet, self.drift_devnet)
+        
+        # Trading mode from Render
+        self.enable_testnet_trading = os.getenv('ENABLE_TESTNET_TRADING', 'false').lower() == 'true'
+        
+        # Get pairs to monitor
+        self.pairs_to_monitor = self.settings['TRADING_CONFIG']['PAIRS_TO_MONITOR']
+        
+        # Tracking
+        self.last_roi_update = datetime.now()
+        self.roi_update_interval = int(os.getenv('ROI_UPDATE_INTERVAL', '600'))  # From Render
+        
+        logger.info(f"Bot initialized - Paper Trading: $1,000 | Testnet: {'ENABLED' if self.enable_testnet_trading else 'DISABLED'}")
+    
+    def _apply_env_overrides(self):
+        """Apply Render environment variable overrides to settings"""
+        # Trading config overrides
+        if os.getenv('SPREAD_THRESHOLD'):
+            self.settings['TRADING_CONFIG']['SPREAD_THRESHOLD'] = float(os.getenv('SPREAD_THRESHOLD'))
+            logger.info(f"Spread threshold overridden: {self.settings['TRADING_CONFIG']['SPREAD_THRESHOLD']}")
+        
+        if os.getenv('TRADE_SIZE_USDC'):
+            self.settings['TRADING_CONFIG']['TRADE_SIZE_USDC'] = float(os.getenv('TRADE_SIZE_USDC'))
+        
+        if os.getenv('MIN_PROFIT_AFTER_FEES'):
+            self.settings['TRADING_CONFIG']['MIN_PROFIT_AFTER_FEES'] = float(os.getenv('MIN_PROFIT_AFTER_FEES'))
+        
+        if os.getenv('START_BALANCE'):
+            self.settings['TRADING_CONFIG']['START_BALANCE'] = float(os.getenv('START_BALANCE'))
+        
+        # Risk management overrides
+        if os.getenv('MAX_TRADES_PER_DAY'):
+            self.settings['RISK_MANAGEMENT']['MAX_TRADES_PER_DAY'] = int(os.getenv('MAX_TRADES_PER_DAY'))
+        
+        if os.getenv('MAX_DAILY_DRAWDOWN'):
+            self.settings['RISK_MANAGEMENT']['MAX_DAILY_DRAWDOWN'] = float(os.getenv('MAX_DAILY_DRAWDOWN'))
+        
+        # Log all active overrides
+        logger.info("Active Render environment overrides applied")
+    
+    # ... rest of the bot code remains the same ...
+
+def main():
+    """Entry point"""
+    try:
+        # Log Render environment
+        if 'RENDER' in os.environ:
+            logger.info(f"Running on Render - Service: {os.getenv('RENDER_SERVICE_NAME')}")
+            logger.info(f"Instance: {os.getenv('RENDER_INSTANCE_ID')}")
+        
+        os.makedirs('data/logs', exist_ok=True)
+        
+        bot = DriftArbBot()
+        bot.run()
+    except Exception as e:
+        logger.error(f"Failed to start bot: {e}")
+        sys.exit(1)
+
+if __name__ == "__main__":
+    main()
