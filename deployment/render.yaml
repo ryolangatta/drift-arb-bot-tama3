@@ -2,20 +2,61 @@ services:
   - type: worker
     name: drift-arb-bot
     runtime: python
-    repo: https://github.com/ryolangatta/drift-arb-bot
+    repo: https://github.com/ryolangatta/drift-arb-bot-tama1
     branch: main
     buildCommand: pip install -r requirements.txt
     startCommand: python core/main.py
     envVars:
+      # Python version
       - key: PYTHON_VERSION
         value: "3.11"
+      
+      # Auto-generated database
       - key: DATABASE_URL
         generateValue: true
-      - key: MODE
-        sync: false
+      
+      # User must set these in Render dashboard
       - key: DISCORD_WEBHOOK_URL
         sync: false
+      
+      - key: MODE
+        value: SIMULATION
+        sync: false
+      
+      - key: ENV
+        value: production
+        sync: false
+      
+      # Optional overrides (set in dashboard)
+      - key: SPREAD_THRESHOLD
+        sync: false
+      
+      - key: TRADE_SIZE_USDC
+        sync: false
+      
+      - key: ENABLE_TESTNET_TRADING
+        sync: false
+      
+      - key: BINANCE_TESTNET_API_KEY
+        sync: false
+      
+      - key: BINANCE_TESTNET_SECRET
+        sync: false
+      
+      - key: SOLANA_DEVNET_PRIVATE_KEY
+        sync: false
+    
+    # Persistent disk for data
     disk:
       name: bot-data
       mountPath: /data
       sizeGB: 1
+    
+    # Health check
+    healthCheckPath: /
+    
+    # Scaling
+    numInstances: 1
+    
+    # Region (optional)
+    region: oregon

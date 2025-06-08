@@ -11,24 +11,28 @@ from datetime import datetime
 from dotenv import load_dotenv
 from discord_webhook import DiscordWebhook, DiscordEmbed
 
-# Add parent directory to path
+# Add parent directory to path for module imports
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from modules.price_feed import PriceFeed
 from modules.arb_detector import ArbitrageDetector
 from modules.binance_testnet_simple import BinanceTestnetSimple
 from modules.drift_devnet_simple import DriftDevnetSimple
+from modules.drift_integration import DriftIntegration
 
 # Load environment variables
 load_dotenv()
 
-# Setup logging
+# Setup logging - works for both Codespaces and Render
+log_dir = 'data/logs'
+os.makedirs(log_dir, exist_ok=True)
+
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
         logging.StreamHandler(sys.stdout),
-        logging.FileHandler('data/logs/bot.log', mode='a')
+        logging.FileHandler(os.path.join(log_dir, 'bot.log'), mode='a')
     ]
 )
 logger = logging.getLogger(__name__)
@@ -51,10 +55,18 @@ class DriftArbBot:
         # Initialize testnet connections if enabled
         self.binance_testnet = None
         self.drift_devnet = None
+        self.drift_integration = None
         if self.enable_testnet:
             logger.info("Initializing test network connections...")
             self.binance_testnet = BinanceTestnetSimple()
-            self.drift_devnet = DriftDevnetSimple()
+            
+            # Use real Drift integration if configured
+            use_real_drift = os.getenv('USE_REAL_DRIFT', 'false').lower() == 'true'
+            if use_real_drift:
+                self.drift_integration = DriftIntegration()
+                # We'll connect async later
+            else:
+                self.drift_devnet = DriftDevnetSimple()
         
         # Get pairs to monitor
         self.pairs_to_monitor = self.settings['TRADING_CONFIG']['PAIRS_TO_MONITOR']
@@ -88,7 +100,11 @@ class DriftArbBot:
             
             if self.enable_testnet:
                 binance_status = "✅ Connected" if self.binance_testnet and self.binance_testnet.connected else "❌ Not Connected"
-                drift_status = "✅ Connected" if self.drift_devnet and self.drift_devnet.connected else "❌ Not Connected"
+                
+                if self.drift_integration:
+                    drift_status = "✅ Connected (Real)" if self.drift_integration and self.drift_integration.connected else "❌ Not Connected"
+                else:
+                    drift_status = "✅ Connected (Simulated)" if self.drift_devnet and self.drift_devnet.connected else "❌ Not Connected"
                 
                 embed.add_embed_field(
                     name="Test Networks",
@@ -163,9 +179,16 @@ class DriftArbBot:
         
         if opportunity:
             # Execute test orders if enabled
-            if self.enable_testnet and self.binance_testnet and self.drift_devnet:
+            if self.enable_testnet and self.binance_testnet:
+                # Check which Drift connection we're using
+                drift_connected = False
+                if self.drift_integration and self.drift_integration.connected:
+                    drift_connected = True
+                elif self.drift_devnet and self.drift_devnet.connected:
+                    drift_connected = True
+                
                 # Only execute if both are connected
-                if self.binance_testnet.connected and self.drift_devnet.connected:
+                if self.binance_testnet.connected and drift_connected:
                     # Calculate quantity
                     trade_size_usd = self.settings['TRADING_CONFIG']['TRADE_SIZE_USDC']
                     quantity = trade_size_usd / spot_price
@@ -178,11 +201,20 @@ class DriftArbBot:
                     drift_market = pair.split("/")[0] + "-PERP"
                     drift_order = None
                     if binance_order:
-                        drift_order = self.drift_devnet.place_perp_order(
-                            drift_market, 
-                            float(binance_order['executedQty']), 
-                            perp_price
-                        )
+                        if self.drift_integration:
+                            # Use real Drift integration
+                            drift_order = await self.drift_integration.place_perp_order(
+                                drift_market, 
+                                float(binance_order['executedQty']), 
+                                perp_price
+                            )
+                        else:
+                            # Use simulated Drift
+                            drift_order = self.drift_devnet.place_perp_order(
+                                drift_market, 
+                                float(binance_order['executedQty']), 
+                                perp_price
+                            )
                     
                     # Send alert if both orders successful
                     if binance_order and drift_order:
@@ -225,6 +257,18 @@ class DriftArbBot:
     
     async def run_async(self):
         """Async main loop"""
+        # Initialize Drift if using real integration
+        if self.drift_integration:
+            logger.info("Connecting to Drift Protocol...")
+            connected = await self.drift_integration.connect()
+            if connected:
+                # Check account info
+                info = await self.drift_integration.get_account_info()
+                if info:
+                    logger.info(f"Drift Account - Collateral: ${info['total_collateral']:.2f}, Free: ${info['free_collateral']:.2f}")
+                    if info['total_collateral'] < 10:
+                        logger.warning("Low collateral! Please deposit USDC to your Drift account on devnet")
+        
         logger.info("Starting price monitoring...")
         
         # Start price monitoring
@@ -260,6 +304,7 @@ class DriftArbBot:
 def main():
     """Entry point"""
     try:
+        # Create log directory
         os.makedirs('data/logs', exist_ok=True)
         
         bot = DriftArbBot()
