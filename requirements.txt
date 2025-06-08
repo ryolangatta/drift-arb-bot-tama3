@@ -15,6 +15,8 @@ solana==0.30.2
 anchorpy==0.18.0
 base58==2.1.1
 solders==0.18.1
+driftpy==0.8.56
 
 # Visualization
 matplotlib==3.7.1
+driftpy==0.8.56
