@@ -53,9 +53,9 @@ class DriftArbBot:
             logger.info("Initializing Binance Testnet connection...")
             self.testnet = BinanceTestnetSimple()
             
-            # Sell USDC for USDT once to fund trading
+            # Sell SOL for USDT once to fund trading (SOLUSDT exists on testnet)
             if self.testnet and self.testnet.connected:
-                self.testnet.sell_usdc_for_usdt_once()
+                self.testnet.sell_sol_for_usdt_once()
         
         # Get pairs to monitor
         self.pairs_to_monitor = self.settings['TRADING_CONFIG']['PAIRS_TO_MONITOR']
@@ -225,4 +225,4 @@ def main():
         sys.exit(1)
 
 if __name__ == "__main__":
-    main()
+    main()# Force fresh deployment Mon Jun  9 11:05:26 UTC 2025

@@ -61,3 +61,37 @@ class BinanceTestnetSimple:
         except Exception as e:
             logger.error(f"Failed to place testnet order: {e}")
             return None
+    
+    def sell_sol_for_usdt_once(self):
+        """One-time function to sell 2 SOL for USDT to fund arbitrage trading"""
+        if not self.connected:
+            logger.error("Not connected to Binance Testnet")
+            return False
+        
+        try:
+            # Check current SOL balance first
+            sol_balance = float(self.client.get_asset_balance(asset='SOL')['free'])
+            logger.info(f"Current SOL balance: {sol_balance}")
+            
+            if sol_balance < 2.0:
+                logger.warning(f"Insufficient SOL balance: {sol_balance} < 2.0")
+                return False
+            
+            # Sell 2 SOL for USDT (SOLUSDT pair exists on testnet)
+            logger.info("💰 Selling 2 SOL for USDT to fund arbitrage trading...")
+            order = self.client.order_market_sell(symbol='SOLUSDT', quantity=2.0)
+            
+            # Check the result
+            executed_qty = float(order['executedQty'])
+            logger.info(f"✅ SOLD {executed_qty} SOL FOR USDT!")
+            logger.info(f"Order ID: {order['orderId']} - Status: {order['status']}")
+            
+            # Check new USDT balance
+            usdt_balance = float(self.client.get_asset_balance(asset='USDT')['free'])
+            logger.info(f"New USDT balance: {usdt_balance}")
+            
+            return True
+            
+        except Exception as e:
+            logger.error(f"Failed to sell SOL for USDT: {e}")
+            return False
