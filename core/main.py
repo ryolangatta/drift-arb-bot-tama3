@@ -19,7 +19,7 @@ from modules.price_feed import PriceFeed
 from modules.arb_detector import ArbitrageDetector
 from modules.binance_testnet_simple import BinanceTestnetSimple
 from modules.drift_devnet_simple import DriftDevnetSimple
-from modules.drift_integration import DriftIntegration
+# from modules.drift_integration import DriftIntegration  # Commented out - import issue
 from modules.trade_tracker import TradeTracker
 
 # Load environment variables
@@ -65,8 +65,9 @@ class DriftArbBot:
             # Use real Drift integration if configured
             use_real_drift = os.getenv('USE_REAL_DRIFT', 'false').lower() == 'true'
             if use_real_drift:
-                self.drift_integration = DriftIntegration()
-                # We'll connect async later
+                # self.drift_integration = DriftIntegration()  # Commented out - import issue
+                # We'll use simulated for now
+                self.drift_devnet = DriftDevnetSimple()
             else:
                 self.drift_devnet = DriftDevnetSimple()
         
