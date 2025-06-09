@@ -33,7 +33,7 @@ class PriceFeed:
             # Convert symbol format (SOL/USDC -> SOLUSDT for Binance)
             # Note: Binance mainly uses USDT pairs
             if "USDC" in symbol:
-                binance_symbol = symbol.replace("/USDC", "USDT").replace("/", "")
+                binance_symbol = symbol.replace("/", "").replace("/", "")
             else:
                 binance_symbol = symbol.replace("/", "")
             
