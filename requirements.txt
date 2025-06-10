@@ -17,3 +17,4 @@ driftpy
 
 # Analysis
 pandas-ta==0.3.14b0
+driftpy
