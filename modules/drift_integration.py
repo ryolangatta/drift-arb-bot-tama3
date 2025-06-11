@@ -1,18 +1,17 @@
 """
-Drift Protocol Integration for Devnet
+Drift Protocol Integration for Devnet - WORKING VERSION
 """
 import os
 import logging
-from typing import Optional
+import json
+from typing import Optional, Dict
 from solders.keypair import Keypair
 from solana.rpc.async_api import AsyncClient
 from anchorpy import Wallet
 
 from driftpy.drift_client import DriftClient
-from driftpy.accounts import get_perp_market_account, get_spot_market_account
 from driftpy.constants.numeric_constants import BASE_PRECISION, PRICE_PRECISION
-from driftpy.types import OrderParams, OrderType, PositionDirection, PostOnlyParams
-from driftpy.keypair import load_keypair
+from driftpy.types import PositionDirection, OrderType, OrderParams
 
 logger = logging.getLogger(__name__)
 
@@ -23,9 +22,10 @@ class DriftIntegration:
         self.connected = False
         self.wallet = None
         self.connection = None
+        self.user_initialized = False
         
     async def connect(self):
-        """Connect to Drift on Solana Devnet"""
+        """Connect to Drift on Solana Devnet using PROVEN working sequence"""
         try:
             # Get private key from environment
             private_key_str = os.getenv('SOLANA_DEVNET_PRIVATE_KEY', '')
@@ -34,66 +34,51 @@ class DriftIntegration:
                 logger.warning("No Solana Devnet credentials found")
                 return False
             
-            # Parse the private key
-            if private_key_str.startswith('['):
-                # Handle array format
-                cleaned = private_key_str.strip('[]').replace(' ', '')
-                key_array = [int(x) for x in cleaned.split(',')]
-                
-                if len(key_array) >= 32:
-                    secret_key = bytes(key_array[:32])
-                    keypair = Keypair.from_seed(secret_key)
-                else:
-                    raise ValueError(f"Invalid key length: {len(key_array)}")
-            else:
-                # Try to load as JSON array string
-                import json
-                key_array = json.loads(private_key_str)
-                secret_key = bytes(key_array[:32])
-                keypair = Keypair.from_seed(secret_key)
+            # Parse JSON array format (PROVEN working method)
+            key_array = json.loads(private_key_str)
+            secret_key = bytes(key_array[:32])
+            keypair = Keypair.from_seed(secret_key)
             
             # Create wallet
             self.wallet = Wallet(keypair)
+            logger.info(f"Wallet created: {self.wallet.payer.pubkey()}")
             
             # Connect to Solana devnet
-            rpc_url = os.getenv('DEVNET_RPC_URL', 'https://api.devnet.solana.com')
+            rpc_url = 'https://api.devnet.solana.com'
             self.connection = AsyncClient(rpc_url)
             
             # Initialize Drift client
             self.drift_client = DriftClient(
                 self.connection,
                 self.wallet,
-                "devnet"  # Using devnet
+                "devnet"
             )
+            logger.info("DriftClient created")
             
-            # Check if user exists, if not create one
+            # EXACT SEQUENCE THAT WORKED IN DEBUG:
+            
+            # Step 1: Initialize user account (one-time setup)
             try:
-                await self.drift_client.add_user(0)
-                logger.info("Drift user account found")
-            except:
-                logger.info("Creating new Drift user account...")
-                try:
-                    await self.drift_client.initialize_user()
-                    await self.drift_client.add_user(0)
-                except Exception as e:
-                    logger.warning(f"Cannot create Drift account (need devnet SOL for gas): {e}")
-                    # Continue anyway for testing purposes
-                    pass
+                result = await self.drift_client.initialize_user()
+                logger.info(f"User initialized: {result}")
+            except Exception as e:
+                logger.info(f"User already exists: {e}")
             
-            # Subscribe to market data
+            # Step 2: Add user sub-account 0
+            await self.drift_client.add_user(0)
+            logger.info("User sub-account 0 added")
+            
+            # Step 3: Subscribe to markets (REQUIRED)
             await self.drift_client.subscribe()
+            logger.info("Subscribed to markets")
+            
+            # Step 4: Verify user access
+            user = self.drift_client.get_user()
+            logger.info("User object accessible")
             
             self.connected = True
-            logger.info(f"Connected to Drift Devnet! Wallet: {self.wallet.payer.pubkey()}")
-            
-            # Log account info (wrapped in try-catch to handle empty accounts)
-            try:
-                user = self.drift_client.get_user()
-                if user:
-                    total_collateral = user.get_total_collateral() / PRICE_PRECISION
-                    logger.info(f"Drift Account - Collateral: ${total_collateral:.2f}")
-            except Exception as e:
-                logger.warning(f"Account has no collateral yet: {e}")
+            self.user_initialized = True
+            logger.info(f"✅ Connected to Drift Devnet! Wallet: {self.wallet.payer.pubkey()}")
             
             return True
             
@@ -101,36 +86,35 @@ class DriftIntegration:
             logger.error(f"Cannot connect to Drift Devnet: {e}")
             self.connected = False
             return False
-    
-    async def deposit_collateral(self, amount_usdc: float):
-        """Deposit USDC to Drift account"""
+
+    async def get_account_info(self):
+        """Get Drift account information"""
         try:
-            if not self.connected:
-                logger.error("Not connected to Drift")
+            if not self.connected or not self.user_initialized:
+                logger.error("Not properly connected to Drift")
                 return None
             
-            # Convert to USDC precision (10^6)
-            amount = int(amount_usdc * PRICE_PRECISION)
+            user = self.drift_client.get_user()
             
-            # Deposit to Drift
-            tx_sig = await self.drift_client.deposit(
-                amount,
-                0,  # spot market index for USDC
-                user_token_account=None  # Will use default
-            )
+            # Get collateral
+            total_collateral = user.get_total_collateral() / PRICE_PRECISION
+            free_collateral = user.get_free_collateral() / PRICE_PRECISION
             
-            logger.info(f"Deposited ${amount_usdc} USDC to Drift. Tx: {tx_sig}")
-            return tx_sig
+            return {
+                'total_collateral': total_collateral,
+                'free_collateral': free_collateral,
+                'wallet': str(self.wallet.payer.pubkey())
+            }
             
         except Exception as e:
-            logger.error(f"Failed to deposit collateral: {e}")
+            logger.error(f"Failed to get account info: {e}")
             return None
-    
+
     async def place_perp_order(self, market: str, size: float, price: float, direction: str = "SHORT"):
-        """Place a real perpetual order on Drift"""
+        """Place a real perpetual order on Drift devnet"""
         try:
-            if not self.connected:
-                logger.error("Not connected to Drift")
+            if not self.connected or not self.user_initialized:
+                logger.error("Not properly connected to Drift")
                 return None
             
             # Get market index (SOL-PERP = 0)
@@ -143,13 +127,14 @@ class DriftIntegration:
             price_int = int(price * PRICE_PRECISION)
             
             # Create order params
+            from driftpy.types import MarketType
             order_params = OrderParams(
                 order_type=OrderType.Limit(),
                 market_index=market_index,
+                market_type=MarketType.Perp(),
                 base_asset_amount=base_asset_amount,
                 direction=PositionDirection.Short() if direction == "SHORT" else PositionDirection.Long(),
                 price=price_int,
-                post_only=PostOnlyParams.TryPostOnly()  # Maker order
             )
             
             logger.info(f"Placing Drift order: {direction} {size} {market} @ ${price}")
@@ -158,10 +143,6 @@ class DriftIntegration:
             tx_sig = await self.drift_client.place_perp_order(order_params)
             
             logger.info(f"✅ DRIFT ORDER PLACED! Tx: {tx_sig}")
-            
-            # Get order info
-            user = self.drift_client.get_user()
-            orders = user.get_open_orders()
             
             return {
                 'orderId': tx_sig,
@@ -176,52 +157,3 @@ class DriftIntegration:
         except Exception as e:
             logger.error(f"Failed to place Drift order: {e}")
             return None
-    
-    async def get_account_info(self):
-        """Get Drift account information"""
-        try:
-            if not self.connected:
-                return None
-            
-            user = self.drift_client.get_user()
-            
-            # Get collateral
-            total_collateral = user.get_total_collateral() / PRICE_PRECISION
-            free_collateral = user.get_free_collateral() / PRICE_PRECISION
-            
-            # Get positions
-            perp_positions = user.get_active_perp_positions()
-            
-            info = {
-                'total_collateral': total_collateral,
-                'free_collateral': free_collateral,
-                'positions': []
-            }
-            
-            for pos in perp_positions:
-                market_index = pos.market_index
-                base_amount = pos.base_asset_amount / BASE_PRECISION
-                
-                if base_amount != 0:
-                    info['positions'].append({
-                        'market_index': market_index,
-                        'size': base_amount,
-                        'side': 'LONG' if base_amount > 0 else 'SHORT'
-                    })
-            
-            return info
-            
-        except Exception as e:
-            logger.error(f"Failed to get account info: {e}")
-            return None
-    
-    async def close(self):
-        """Close the Drift client connection"""
-        try:
-            if self.drift_client:
-                await self.drift_client.unsubscribe()
-            if self.connection:
-                await self.connection.close()
-            logger.info("Drift connection closed")
-        except Exception as e:
-            logger.error(f"Error closing Drift connection: {e}")
