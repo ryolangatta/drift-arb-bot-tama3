@@ -157,3 +157,19 @@ class DriftIntegration:
         except Exception as e:
             logger.error(f"Failed to place Drift order: {e}")
             return None
+
+# Add this to your drift_integration.py
+async def emergency_cleanup(self):
+    """Emergency cleanup of all open orders"""
+    try:
+        user = self.drift_client.get_user()
+        orders = user.get_open_orders()
+        
+        print(f"Found {len(orders)} open orders")
+        
+        for order in orders:
+            await self.drift_client.cancel_order(order.order_id)
+            print(f"Cancelled order {order.order_id}")
+            
+    except Exception as e:
+        print(f"Cleanup failed: {e}")            
