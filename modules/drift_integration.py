@@ -1,6 +1,6 @@
 """
-Complete Drift Integration with Market Order Fix
-Replace your entire modules/drift_integration.py with this code
+Drift Protocol Integration for Devnet - FIXED VERSION
+Includes proper MarketType parameter for OrderParams
 """
 import os
 import logging
@@ -12,7 +12,7 @@ from anchorpy import Wallet
 from driftpy.drift_client import DriftClient
 from driftpy.accounts import get_perp_market_account, get_spot_market_account
 from driftpy.constants.numeric_constants import BASE_PRECISION, PRICE_PRECISION
-from driftpy.types import OrderParams, OrderType, PositionDirection, PostOnlyParams
+from driftpy.types import OrderParams, OrderType, PositionDirection, PostOnlyParams, MarketType
 from driftpy.keypair import load_keypair
 
 logger = logging.getLogger(__name__)
@@ -78,6 +78,7 @@ class DriftIntegration:
                     await self.drift_client.add_user(0)
                 except Exception as e:
                     logger.warning(f"Cannot create Drift account (need devnet SOL for gas): {e}")
+                    # Continue anyway for testing purposes
                     pass
             
             # Subscribe to market data
@@ -102,50 +103,6 @@ class DriftIntegration:
             self.connected = False
             return False
     
-    async def place_perp_order(self, market: str, size: float, price: float, direction: str = "SHORT"):
-        """Place a perpetual MARKET order (executes immediately)"""
-        try:
-            if not self.connected:
-                logger.error("Not connected to Drift")
-                return None
-            
-            # Get market index (SOL-PERP = 0)
-            market_index = 0  
-            
-            # Convert size to BASE_PRECISION (10^9)
-            base_asset_amount = int(size * BASE_PRECISION)
-            
-            # Create order params for MARKET order
-            order_params = OrderParams(
-                order_type=OrderType.Market(),  # KEY FIX: Market order executes immediately
-                market_index=market_index,
-                base_asset_amount=base_asset_amount,
-                direction=PositionDirection.Short() if direction == "SHORT" else PositionDirection.Long(),
-                # No price needed for market orders - they execute at current market price
-            )
-            
-            logger.info(f"Placing Drift MARKET order: {direction} {size} {market}")
-            
-            # Place the market order - executes immediately through JIT auction
-            tx_sig = await self.drift_client.place_perp_order(order_params)
-            
-            logger.info(f"✅ DRIFT MARKET ORDER EXECUTED! Tx: {tx_sig}")
-            
-            return {
-                'orderId': tx_sig,
-                'market': market,
-                'side': direction,
-                'size': size,
-                'price': price,
-                'status': 'FILLED',  # Market orders fill immediately
-                'tx_signature': tx_sig,
-                'order_type': 'MARKET'
-            }
-            
-        except Exception as e:
-            logger.error(f"Failed to place Drift market order: {e}")
-            return None
-    
     async def deposit_collateral(self, amount_usdc: float):
         """Deposit USDC to Drift account"""
         try:
@@ -168,6 +125,57 @@ class DriftIntegration:
             
         except Exception as e:
             logger.error(f"Failed to deposit collateral: {e}")
+            return None
+    
+    async def place_perp_order(self, market: str, size: float, price: float, direction: str = "SHORT"):
+        """Place a real perpetual order on Drift - FIXED VERSION"""
+        try:
+            if not self.connected:
+                logger.error("Not connected to Drift")
+                return None
+            
+            # Get market index (SOL-PERP = 0)
+            market_index = 0  # SOL-PERP
+            
+            # Convert size to BASE_PRECISION (10^9)
+            base_asset_amount = int(size * BASE_PRECISION)
+            
+            # Convert price to PRICE_PRECISION (10^6)
+            price_int = int(price * PRICE_PRECISION)
+            
+            # Create order params with FIXED market_type parameter
+            order_params = OrderParams(
+                order_type=OrderType.Market(),  # Market order for immediate execution
+                market_type=MarketType.Perp(),  # FIXED: Added missing market_type parameter
+                market_index=market_index,
+                base_asset_amount=base_asset_amount,
+                direction=PositionDirection.Short() if direction == "SHORT" else PositionDirection.Long(),
+                price=price_int,
+            )
+            
+            logger.info(f"Placing Drift order: {direction} {size} {market} @ ${price}")
+            
+            # Place the order
+            tx_sig = await self.drift_client.place_perp_order(order_params)
+            
+            logger.info(f"✅ DRIFT ORDER PLACED! Tx: {tx_sig}")
+            
+            # Get order info
+            user = self.drift_client.get_user()
+            orders = user.get_open_orders()
+            
+            return {
+                'orderId': tx_sig,
+                'market': market,
+                'side': direction,
+                'size': size,
+                'price': price,
+                'status': 'PLACED',
+                'tx_signature': tx_sig
+            }
+            
+        except Exception as e:
+            logger.error(f"Failed to place Drift market order: {e}")
             return None
     
     async def get_account_info(self):
