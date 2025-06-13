@@ -383,7 +383,7 @@ class DriftArbBot:
                 'active_orders': active_order_count,
                 'allocation': allocation,
                 'can_trade': allocation >= min_trade_size,
-                'reason': f"Order {active_order_count + 1} of 2: {allocation:.2f} available"
+                'reason': f"Order {active_order_count + 1} of {self.max_concurrent_orders}: ${allocation:.2f} available"
             }
             
         except Exception as e:
