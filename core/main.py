@@ -287,6 +287,21 @@ class DriftArbBot:
             self.settings = json.load(f)
         logger.info("✅ Settings loaded")
         
+        # Load settings
+        with open('config/settings.json', 'r') as f:
+            self.settings = json.load(f)
+        logger.info("✅ Settings loaded")
+        
+        # Override with Render environment variables
+        if os.getenv('TRADE_SIZE_USDC'):
+            self.settings['TRADING_CONFIG']['TRADE_SIZE_USDC'] = float(os.getenv('TRADE_SIZE_USDC'))
+            logger.info(f"🔧 Trade size overridden to: ${os.getenv('TRADE_SIZE_USDC')}")
+        
+        # Initialize core modules
+        self.price_feed = PriceFeed(self.settings)
+        self.arb_detector = ArbitrageDetector(self.settings)
+        logger.info("✅ Core modules initialized")
+
         # Initialize core modules
         self.price_feed = PriceFeed(self.settings)
         self.arb_detector = ArbitrageDetector(self.settings)
