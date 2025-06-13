@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Drift-Binance Arbitrage Bot - Fixed Direction Logic
-Now properly handles both buying and selling based on price differences
+Drift-Binance Arbitrage Bot - Professional Grade with Dynamic Order Management
+Features: 45%/90% allocation, concurrent order tracking, intelligent balance management
 """
 import os
 import sys
@@ -84,14 +84,14 @@ except Exception as e:
     sys.exit(1)
 
 class ArbitrageExecutor:
-    """Fixed arbitrage executor that handles both buy and sell directions"""
+    """Professional arbitrage executor with intelligent direction handling"""
     
     def __init__(self, binance_testnet, drift_integration):
         self.binance = binance_testnet
         self.drift = drift_integration
     
     def determine_arbitrage_direction(self, opportunity: dict) -> dict:
-        """Determine whether to buy or sell based on price difference"""
+        """Determine optimal trade direction based on price difference"""
         spot_price = opportunity['spot_price']
         perp_price = opportunity['perp_price']
         
@@ -113,14 +113,12 @@ class ArbitrageExecutor:
             }
     
     def check_required_balances(self, direction: dict, trade_size_usd: float, spot_price: float) -> dict:
-        """Check if we have sufficient balances for the trade"""
+        """Check if sufficient balances exist for the trade"""
         try:
-            # Get current balances
             balances = self.binance.get_all_balances()
             usdt_balance = balances.get('USDT', 0)
             sol_balance = balances.get('SOL', 0)
             
-            # Calculate required amounts
             sol_quantity = trade_size_usd / spot_price
             
             if direction['binance_side'] == 'BUY':
@@ -134,7 +132,6 @@ class ArbitrageExecutor:
                     'available': f'${usdt_balance:.2f} USDT',
                     'action': 'Buy SOL with USDT'
                 }
-            
             else:  # SELL
                 # Need SOL to sell for USDT
                 required_sol = sol_quantity * 1.001  # Add 0.1% buffer
@@ -155,13 +152,11 @@ class ArbitrageExecutor:
             }
     
     async def execute_arbitrage(self, opportunity: dict, trade_size_usd: float) -> dict:
-        """Execute arbitrage trade in the correct direction"""
+        """Execute arbitrage trade with professional error handling"""
         try:
-            # Determine trade direction
             direction = self.determine_arbitrage_direction(opportunity)
             logger.info(f"📊 Trade Direction: {direction['reasoning']}")
             
-            # Check balances
             balance_check = self.check_required_balances(
                 direction, trade_size_usd, opportunity['spot_price']
             )
@@ -179,8 +174,6 @@ class ArbitrageExecutor:
                 }
             
             logger.info(f"✅ Balance check passed: {balance_check['action']}")
-            logger.info(f"   Required: {balance_check['required']}")
-            logger.info(f"   Available: {balance_check['available']}")
             
             # Calculate quantities
             base_asset = opportunity['pair'].split('/')[0]
@@ -205,19 +198,13 @@ class ArbitrageExecutor:
             
             logger.info(f"✅ Binance {direction['binance_side']} successful: {binance_order['orderId']}")
             
-            # Execute Drift trade (opposite direction)
+            # Execute Drift trade
             drift_market = f"{base_asset}-PERP"
             logger.info(f"🔄 Executing Drift {direction['drift_side']}: {sol_quantity:.4f} {base_asset}")
             
-            # Use the drift integration to place the order
-            if direction['drift_side'] == 'SHORT':
-                drift_order = await self.drift.place_perp_order(
-                    drift_market, sol_quantity, opportunity['perp_price'], 'SHORT'
-                )
-            else:  # LONG
-                drift_order = await self.drift.place_perp_order(
-                    drift_market, sol_quantity, opportunity['perp_price'], 'LONG'
-                )
+            drift_order = await self.drift.place_perp_order(
+                drift_market, sol_quantity, opportunity['perp_price'], direction['drift_side']
+            )
             
             if not drift_order:
                 logger.error("❌ Drift order failed")
@@ -230,16 +217,13 @@ class ArbitrageExecutor:
             
             logger.info(f"✅ Drift {direction['drift_side']} successful: {drift_order['orderId']}")
             
-            # Calculate actual profit
+            # Calculate profit
             if direction['binance_side'] == 'BUY':
-                # Bought spot at lower price, sold perp at higher price
                 profit_per_unit = opportunity['perp_price'] - opportunity['spot_price']
             else:
-                # Sold spot at higher price, bought perp at lower price  
                 profit_per_unit = opportunity['spot_price'] - opportunity['perp_price']
             
             gross_profit = profit_per_unit * sol_quantity
-            # Estimate fees (actual fees would come from order responses)
             estimated_fees = trade_size_usd * 0.002  # ~0.2% total fees
             net_profit = gross_profit - estimated_fees
             
@@ -282,27 +266,17 @@ class DriftArbBot:
         logger.info(f"Environment: {self.env}")
         logger.info(f"Testnet enabled: {self.enable_testnet}")
         
-        # Load settings
+        # Load settings (FIXED: removed duplication)
         with open('config/settings.json', 'r') as f:
             self.settings = json.load(f)
         logger.info("✅ Settings loaded")
         
-        # Load settings
-        with open('config/settings.json', 'r') as f:
-            self.settings = json.load(f)
-        logger.info("✅ Settings loaded")
-        
-        # Override with Render environment variables
+        # Override with environment variables
         if os.getenv('TRADE_SIZE_USDC'):
             self.settings['TRADING_CONFIG']['TRADE_SIZE_USDC'] = float(os.getenv('TRADE_SIZE_USDC'))
             logger.info(f"🔧 Trade size overridden to: ${os.getenv('TRADE_SIZE_USDC')}")
         
-        # Initialize core modules
-        self.price_feed = PriceFeed(self.settings)
-        self.arb_detector = ArbitrageDetector(self.settings)
-        logger.info("✅ Core modules initialized")
-
-        # Initialize core modules
+        # Initialize core modules (FIXED: removed duplication)
         self.price_feed = PriceFeed(self.settings)
         self.arb_detector = ArbitrageDetector(self.settings)
         logger.info("✅ Core modules initialized")
@@ -315,11 +289,9 @@ class DriftArbBot:
         if self.enable_testnet:
             logger.info("🔧 Initializing test network connections...")
             
-            # Initialize Binance testnet
             self.binance_testnet = BinanceTestnetSimple()
             logger.info("✅ Binance testnet initialized")
             
-            # Check if we should use real Drift integration
             use_real_drift = os.getenv('USE_REAL_DRIFT', 'false').lower() == 'true'
             logger.info(f"USE_REAL_DRIFT check: '{os.getenv('USE_REAL_DRIFT')}' -> {use_real_drift}")
             
@@ -339,6 +311,11 @@ class DriftArbBot:
         self.trade_tracker = TradeTracker(initial_balance=500.0)
         self.last_report_time = datetime.now()
         
+        # Order management tracking (FIXED: proper indentation)
+        self.active_orders = []  # Track concurrent arbitrage orders
+        self.max_concurrent_orders = 2  # Maximum 2 orders at a time
+        self.order_counter = 0  # Total order counter for IDs
+
         # Statistics
         self.opportunities_found = 0
         self.trades_attempted = 0
@@ -347,6 +324,76 @@ class DriftArbBot:
         logger.info(f"✅ Bot initialized - Mode: {self.mode} | Testnet: {'ENABLED' if self.enable_testnet else 'DISABLED'}")
         logger.info("=== BOT INITIALIZATION COMPLETE ===")
     
+    async def calculate_dynamic_allocation(self):
+        """
+        Calculate smart trade allocation based on available balances and concurrent orders
+        Returns optimal trade size using 45%/90% allocation strategy
+        """
+        try:
+            # Get current balances from both exchanges
+            binance_balance = 0
+            drift_balance = 0
+            
+            # Check Binance testnet balance
+            if self.binance_testnet and self.binance_testnet.connected:
+                binance_balance = self.binance_testnet.get_balance('USDT')
+            
+            # Check Drift balance
+            if self.drift_integration and self.drift_integration.connected:
+                account_info = await self.drift_integration.get_account_info()
+                drift_balance = account_info.get('free_collateral', 0) if account_info else 0
+            elif self.drift_devnet:
+                drift_balance = await self.drift_devnet.get_collateral_balance()
+            
+            # Use minimum balance as effective trading capital
+            effective_balance = min(binance_balance, drift_balance)
+            
+            # Calculate allocation based on concurrent orders
+            active_order_count = len(self.active_orders)
+            
+            if active_order_count == 0:
+                # First order: Use 45% of effective balance
+                allocation = effective_balance * 0.45
+            elif active_order_count == 1:
+                # Second order: Use 90% of remaining balance after first order
+                used_capital = sum(order.get('allocated_amount', 0) for order in self.active_orders)
+                remaining_balance = effective_balance - used_capital
+                allocation = remaining_balance * 0.90
+            else:
+                # Maximum orders reached
+                allocation = 0
+            
+            # Enforce minimum trade size and maximum limit
+            min_trade_size = 50  # Minimum $50 per trade
+            max_trade_size = 200  # Keep existing max size
+            
+            if allocation < min_trade_size:
+                allocation = 0  # Too small to trade
+            elif allocation > max_trade_size:
+                allocation = max_trade_size  # Cap at maximum
+            
+            # Log balance status
+            logger.info(f"💰 Balance Analysis - USDT: ${binance_balance:.2f}, Drift: ${drift_balance:.2f}")
+            logger.info(f"📊 Effective: ${effective_balance:.2f}, Active Orders: {active_order_count}, Allocation: ${allocation:.2f}")
+            
+            return {
+                'binance_balance': binance_balance,
+                'drift_balance': drift_balance,
+                'effective_balance': effective_balance,
+                'active_orders': active_order_count,
+                'allocation': allocation,
+                'can_trade': allocation >= min_trade_size,
+                'reason': f"Order {active_order_count + 1} of 2: {allocation:.2f} available"
+            }
+            
+        except Exception as e:
+            logger.error(f"Error calculating allocation: {e}")
+            return {
+                'can_trade': False,
+                'allocation': 0,
+                'reason': f"Balance calculation error: {e}"
+            }
+
     def send_startup_message(self):
         """Send startup notification to Discord"""
         if not self.webhook_url:
@@ -357,8 +404,8 @@ class DriftArbBot:
             webhook = DiscordWebhook(url=self.webhook_url)
             
             embed = DiscordEmbed(
-                title="🚀 Drift-Binance Arbitrage Bot Started (FIXED DIRECTION LOGIC)",
-                description=f"Mode: **{self.mode}**\nTestnet: **{'ENABLED' if self.enable_testnet else 'DISABLED'}**",
+                title="🚀 Professional Drift-Binance Arbitrage Bot Started",
+                description=f"Mode: **{self.mode}**\nTestnet: **{'ENABLED' if self.enable_testnet else 'DISABLED'}**\n**Dynamic Order Management: ACTIVE**",
                 color="03b2f8"
             )
             
@@ -374,9 +421,9 @@ class DriftArbBot:
                     inline=True
                 )
                 
-                # Indicate which trades are possible
-                can_buy = usdt_balance >= 20
-                can_sell = sol_balance >= 0.1
+                # Trading capability
+                can_buy = usdt_balance >= 50
+                can_sell = sol_balance >= 0.3
                 
                 trade_capability = []
                 if can_buy:
@@ -395,23 +442,10 @@ class DriftArbBot:
                     inline=True
                 )
             
-            # Configuration details
-            config_text = (
-                f"Spread Threshold: {self.settings['TRADING_CONFIG']['SPREAD_THRESHOLD']:.3%}\n"
-                f"Trade Size: ${self.settings['TRADING_CONFIG']['TRADE_SIZE_USDC']}\n"
-                f"Pairs: {', '.join(self.pairs_to_monitor)}"
-            )
-            
+            # Professional features
             embed.add_embed_field(
-                name="📊 Configuration",
-                value=config_text,
-                inline=False
-            )
-            
-            # Key fixes
-            embed.add_embed_field(
-                name="🔧 Key Fixes Applied",
-                value="• ✅ Fixed buy/sell direction logic\n• ✅ Balance checking for both directions\n• ✅ Proper arbitrage execution\n• ✅ Real Drift integration",
+                name="🏆 Professional Features",
+                value="• ✅ 45%/90% Dynamic Allocation\n• ✅ Max 2 Concurrent Orders\n• ✅ Intelligent Balance Management\n• ✅ Real Drift Protocol Integration",
                 inline=False
             )
             
@@ -425,7 +459,7 @@ class DriftArbBot:
             logger.error(f"❌ Error sending Discord notification: {e}")
     
     async def price_callback(self, pair: str, spot_price: float, perp_price: float):
-        """Enhanced callback for when new prices are received"""
+        """Enhanced callback with dynamic allocation integration"""
         try:
             # Check for arbitrage opportunity
             opportunity = self.arb_detector.check_arbitrage_opportunity(
@@ -445,9 +479,9 @@ class DriftArbBot:
                 
                 execution_result = None
                 
-                # Execute test orders if enabled
+                # Execute with dynamic allocation if enabled
                 if self.enable_testnet and self.binance_testnet:
-                    execution_result = await self._execute_testnet_arbitrage(opportunity)
+                    execution_result = await self._execute_professional_arbitrage(opportunity)
                 
                 # Send alert
                 self.send_opportunity_alert(opportunity, execution_result)
@@ -461,49 +495,78 @@ class DriftArbBot:
             logger.error(f"❌ Error in price callback: {e}")
             logger.error(traceback.format_exc())
     
-    async def _execute_testnet_arbitrage(self, opportunity: dict):
-        """Execute arbitrage with fixed direction logic"""
+    async def _execute_professional_arbitrage(self, opportunity: dict):
+        """Execute arbitrage with professional dynamic allocation"""
         try:
+            # Check concurrent order limit
+            if len(self.active_orders) >= self.max_concurrent_orders:
+                logger.info(f"⏸️ Maximum concurrent orders ({self.max_concurrent_orders}) reached - skipping trade")
+                return {'success': False, 'error': 'Maximum concurrent orders reached'}
+
+            # Get dynamic allocation
+            allocation_result = await self.calculate_dynamic_allocation()
+
+            if not allocation_result['can_trade']:
+                logger.warning(f"❌ Cannot trade: {allocation_result['reason']}")
+                return {'success': False, 'error': allocation_result['reason']}
+
+            # Use dynamic trade size instead of fixed amount
+            trade_size_usd = allocation_result['allocation']
+            
             self.trades_attempted += 1
-            trade_size_usd = self.settings['TRADING_CONFIG']['TRADE_SIZE_USDC']
+            logger.info(f"🔄 Attempting arbitrage #{self.trades_attempted} with dynamic allocation...")
+            logger.info(f"💡 Dynamic allocation: ${trade_size_usd:.2f} (Order {len(self.active_orders) + 1}/2)")
             
-            logger.info(f"🔄 Attempting arbitrage #{self.trades_attempted}...")
+            # Create order tracking entry
+            order_id = f"ARB_{self.order_counter + 1}_{int(datetime.now().timestamp())}"
+            self.order_counter += 1
             
-            # Determine which direction to trade
+            # Determine trade direction
             if opportunity['perp_price'] > opportunity['spot_price']:
-                logger.info(f"🔵 BUYING on Binance (cheaper): ${trade_size_usd} worth of SOL")
+                logger.info(f"🔵 BUYING on Binance (cheaper): ${trade_size_usd:.2f} worth of SOL")
                 logger.info(f"🔴 SHORTING on Drift (expensive): equivalent amount")
             else:
-                logger.info(f"🔴 SELLING on Binance (expensive): ${trade_size_usd} worth of SOL") 
+                logger.info(f"🔴 SELLING on Binance (expensive): ${trade_size_usd:.2f} worth of SOL") 
                 logger.info(f"🔵 LONGING on Drift (cheaper): equivalent amount")
             
-            # Create arbitrage executor with fixed logic
+            # Execute arbitrage with professional executor
             if self.drift_integration:
                 executor = ArbitrageExecutor(self.binance_testnet, self.drift_integration)
                 result = await executor.execute_arbitrage(opportunity, trade_size_usd)
             else:
-                # Fallback to simulated approach
                 logger.warning("⚠️ Using simulated Drift - no real orders placed")
                 result = {'success': False, 'error': 'Real Drift not available'}
             
             if result['success']:
+                # Track successful order
+                order_record = {
+                    'order_id': order_id,
+                    'allocated_amount': trade_size_usd,
+                    'timestamp': datetime.now(),
+                    'pair': opportunity['pair'],
+                    'result': result
+                }
+                self.active_orders.append(order_record)
+                
                 self.trades_successful += 1
                 logger.info(f"🎉 ARBITRAGE EXECUTED SUCCESSFULLY! Trade #{self.trades_successful}")
+                logger.info(f"   Order ID: {order_id}")
                 logger.info(f"   Direction: {result['direction']['action']}")
                 logger.info(f"   Net Profit: ${result['trade_details']['net_profit']:.2f}")
                 logger.info(f"   ROI: {result['trade_details']['roi_percent']:.2f}%")
+                logger.info(f"   Active Orders: {len(self.active_orders)}/{self.max_concurrent_orders}")
             else:
                 logger.error(f"❌ Arbitrage execution failed: {result.get('error', 'Unknown error')}")
             
             return result
             
         except Exception as e:
-            logger.error(f"❌ Error in arbitrage execution: {e}")
+            logger.error(f"❌ Error in professional arbitrage execution: {e}")
             logger.error(traceback.format_exc())
             return {'success': False, 'error': str(e)}
     
     def send_opportunity_alert(self, opportunity: dict, execution_result=None):
-        """Send arbitrage opportunity alert to Discord"""
+        """Send enhanced opportunity alert with allocation details"""
         if not self.webhook_url:
             return
         
@@ -513,8 +576,8 @@ class DriftArbBot:
             if execution_result and execution_result.get('success'):
                 # Successful execution
                 embed = DiscordEmbed(
-                    title="✅ ARBITRAGE EXECUTED - FIXED DIRECTION",
-                    description=f"Successfully executed arbitrage with correct buy/sell logic",
+                    title="✅ PROFESSIONAL ARBITRAGE EXECUTED",
+                    description=f"Dynamic allocation strategy successfully executed",
                     color="00ff00"
                 )
                 
@@ -528,10 +591,18 @@ class DriftArbBot:
                 )
                 
                 embed.add_embed_field(
-                    name="💰 Trade Results",
-                    value=f"Quantity: {trade_details['sol_quantity']:.4f} SOL\n"
-                          f"Net Profit: ${trade_details['net_profit']:.2f}\n"
-                          f"ROI: {trade_details['roi_percent']:.2f}%",
+                    name="💰 Dynamic Allocation",
+                    value=f"Trade Size: ${trade_details['trade_size_usd']:.2f}\n"
+                          f"Quantity: {trade_details['sol_quantity']:.4f} SOL\n"
+                          f"Active Orders: {len(self.active_orders)}/2",
+                    inline=True
+                )
+                
+                embed.add_embed_field(
+                    name="📈 Profit Analysis",
+                    value=f"Net Profit: ${trade_details['net_profit']:.2f}\n"
+                          f"ROI: {trade_details['roi_percent']:.2f}%\n"
+                          f"Fees: ${trade_details['estimated_fees']:.2f}",
                     inline=True
                 )
                 
@@ -539,8 +610,7 @@ class DriftArbBot:
                     bo = execution_result['binance_order']
                     embed.add_embed_field(
                         name=f"🟡 Binance {direction['binance_side']}",
-                        value=f"Order ID: `{bo['orderId']}`\n"
-                              f"Status: {bo['status']}",
+                        value=f"Order ID: `{bo['orderId']}`\nStatus: {bo['status']}",
                         inline=True
                     )
                 
@@ -548,8 +618,7 @@ class DriftArbBot:
                     do = execution_result['drift_order']
                     embed.add_embed_field(
                         name=f"🟣 Drift {direction['drift_side']}",
-                        value=f"Order ID: `{do['orderId']}`\n"
-                              f"Status: {do.get('status', 'PLACED')}",
+                        value=f"Order ID: `{do['orderId']}`\nStatus: {do.get('status', 'PLACED')}",
                         inline=True
                     )
             
@@ -563,20 +632,8 @@ class DriftArbBot:
                     color=color
                 )
                 
-                # Show what the bot would do
-                if opportunity['perp_price'] > opportunity['spot_price']:
-                    action_plan = "📈 Would BUY spot (cheaper) and SHORT perp (expensive)"
-                else:
-                    action_plan = "📉 Would SELL spot (expensive) and LONG perp (cheaper)"
-                
                 embed.add_embed_field(
-                    name="🔄 Action Plan",
-                    value=action_plan,
-                    inline=False
-                )
-                
-                embed.add_embed_field(
-                    name="📊 Prices",
+                    name="📊 Opportunity Analysis",
                     value=f"Binance Spot: ${opportunity['spot_price']:.4f}\n"
                           f"Drift Perp: ${opportunity['perp_price']:.4f}\n"
                           f"Expected Profit: ${opportunity['potential_profit_usdc']:.2f}",
@@ -585,15 +642,15 @@ class DriftArbBot:
                 
                 if execution_result and execution_result.get('error'):
                     embed.add_embed_field(
-                        name="⚠️ Execution Error",
+                        name="⚠️ Execution Status",
                         value=execution_result['error'],
                         inline=True
                     )
             
-            # Add session statistics
+            # Session statistics
             success_rate = (self.trades_successful / max(1, self.trades_attempted)) * 100
             embed.add_embed_field(
-                name="📈 Session Stats",
+                name="📈 Session Performance",
                 value=f"Opportunities: {self.opportunities_found}\n"
                       f"Attempts: {self.trades_attempted}\n"
                       f"Success Rate: {success_rate:.1f}%",
@@ -608,7 +665,7 @@ class DriftArbBot:
             logger.error(f"❌ Error sending opportunity alert: {e}")
     
     def send_periodic_report(self):
-        """Send periodic status report"""
+        """Send enhanced periodic status report"""
         if not self.webhook_url:
             return
         
@@ -618,17 +675,26 @@ class DriftArbBot:
             success_rate = (self.trades_successful / max(1, self.trades_attempted)) * 100
             
             embed = DiscordEmbed(
-                title="📊 10-Minute Status Report",
-                description="Fixed direction logic performance",
+                title="📊 Professional Trading Report - 10 Minutes",
+                description="Dynamic allocation and order management performance",
                 color="1f8b4c"
             )
             
             embed.add_embed_field(
-                name="📈 Performance",
+                name="📈 Performance Metrics",
                 value=f"Opportunities: {self.opportunities_found}\n"
                       f"Attempts: {self.trades_attempted}\n"
                       f"Successful: {self.trades_successful}\n" 
                       f"Success Rate: {success_rate:.1f}%",
+                inline=True
+            )
+            
+            # Order management status
+            embed.add_embed_field(
+                name="🔄 Order Management",
+                value=f"Active Orders: {len(self.active_orders)}/2\n"
+                      f"Total Orders: {self.order_counter}\n"
+                      f"Concurrent Limit: {self.max_concurrent_orders}",
                 inline=True
             )
             
@@ -648,13 +714,13 @@ class DriftArbBot:
             webhook.add_embed(embed)
             webhook.execute()
             
-            logger.info("📊 Periodic report sent to Discord")
+            logger.info("📊 Enhanced periodic report sent to Discord")
             
         except Exception as e:
             logger.error(f"❌ Error sending periodic report: {e}")
-    
+
     async def run_async(self):
-        """Main async loop"""
+        """Main async loop with professional initialization"""
         # Initialize Drift if using real integration
         if self.drift_integration:
             logger.info("🚀 Connecting to REAL Drift Protocol...")
@@ -668,7 +734,7 @@ class DriftArbBot:
                     if info['total_collateral'] < 10:
                         logger.warning("⚠️ Low collateral! Please deposit USDC to your Drift account on devnet")
         
-        logger.info("📡 Starting price monitoring...")
+        logger.info("📡 Starting price monitoring with professional order management...")
         
         # Start price monitoring
         await self.price_feed.start_price_monitoring(
@@ -677,7 +743,7 @@ class DriftArbBot:
         )
     
     def run(self):
-        """Main bot loop"""
+        """Main bot loop with enhanced error handling"""
         try:
             # Send startup message
             self.send_startup_message()
@@ -694,24 +760,27 @@ class DriftArbBot:
             self.shutdown()
     
     def shutdown(self):
-        """Graceful shutdown"""
-        logger.info("🔄 Shutting down bot...")
+        """Professional shutdown with comprehensive reporting"""
+        logger.info("🔄 Shutting down professional arbitrage bot...")
         
         if self.webhook_url:
             try:
                 success_rate = (self.trades_successful / max(1, self.trades_attempted)) * 100
                 
                 final_message = (
-                    f"🛑 **Bot Shutdown - Fixed Direction Logic**\n\n"
-                    f"📊 **Final Statistics:**\n"
+                    f"🛑 **Professional Arbitrage Bot Shutdown**\n\n"
+                    f"📊 **Final Performance:**\n"
                     f"• Opportunities Found: {self.opportunities_found}\n"
                     f"• Trades Attempted: {self.trades_attempted}\n"
                     f"• Successful Trades: {self.trades_successful}\n"
-                    f"• Success Rate: {success_rate:.1f}%\n\n"
-                    f"🔧 **Key Fix Applied:**\n"
-                    f"• ✅ Proper buy/sell direction logic\n"
-                    f"• ✅ Balance checking for both directions\n"
-                    f"• ✅ Real Drift Protocol integration"
+                    f"• Success Rate: {success_rate:.1f}%\n"
+                    f"• Active Orders: {len(self.active_orders)}\n"
+                    f"• Total Orders Processed: {self.order_counter}\n\n"
+                    f"🏆 **Professional Features Used:**\n"
+                    f"• ✅ Dynamic 45%/90% Allocation\n"
+                    f"• ✅ Concurrent Order Management\n"
+                    f"• ✅ Intelligent Balance Monitoring\n"
+                    f"• ✅ Real Drift Protocol Integration"
                 )
                 
                 webhook = DiscordWebhook(url=self.webhook_url, content=final_message)
@@ -720,20 +789,20 @@ class DriftArbBot:
             except Exception as e:
                 logger.error(f"❌ Error sending shutdown message: {e}")
         
-        logger.info("✅ Bot shutdown complete")
+        logger.info("✅ Professional bot shutdown complete")
 
 def main():
-    """Entry point"""
+    """Entry point with professional error handling"""
     try:
         # Create necessary directories
         os.makedirs('data/logs', exist_ok=True)
         
-        # Initialize and run bot
+        # Initialize and run professional bot
         bot = DriftArbBot()
         bot.run()
         
     except Exception as e:
-        logger.error(f"💥 Failed to start bot: {e}")
+        logger.error(f"💥 Failed to start professional bot: {e}")
         logger.error(traceback.format_exc())
         sys.exit(1)
 
